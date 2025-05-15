@@ -92,6 +92,7 @@ async def weather_now(call: CallbackQuery):
         
         
 async def scheduled(bot: Bot, chat_id: int):
+    print(True)
     weather = get_weather_now(*get_user_lat_long(chat_id))
     text = f'''Прогноз погоды на сегодня:
 
@@ -105,7 +106,7 @@ async def scheduled(bot: Bot, chat_id: int):
     if 'daily_chance_of_snow' in weather.keys():
         text += f'\nВероятность снегопада: {weather["daily_chance_of_snow"]}'
 
-    await bot.send_message(chat_id=chat_id, text=text, reply_markup=kb.return_kb)
+    await bot.send_message(chat_id=os.getenv('ADMIN_ID'), text=text, reply_markup=kb.return_kb)
         
         
 # TODO Добавить в настройки смену имени и времени
@@ -209,11 +210,16 @@ async def forecast(call: CallbackQuery):
     await call.message.answer_audio(audio=audio, title=audio_raw.title, performer=audio_raw.artist, caption=text, reply_markup=kb.return_kb)
     
     
+async def test():
+    print(True)
+    
+    
 @router.callback_query(F.data == 'schedule_message')
 async def schedule_message(call: CallbackQuery):
-    scheduler.add_job(scheduled, 'interval',
-                      next_run_time=datetime.now(tz=get_tz_by_lat_long(*get_user_lat_long(call.message.from_user.id))) + timedelta(seconds=3),
-                      args=(call.bot, call.message.chat.id))
+    #scheduler.add_job(scheduled, 'interval',
+    #                  next_run_time=datetime.now() + timedelta(seconds=3),
+    #                  args=(call.bot, os.getenv('ADMIN_ID')))
+    scheduler.add_job(test, 'interval', seconds=3, id='test', next_run_time=datetime.now() + timedelta(seconds=3))
     
     
 @router.message()
