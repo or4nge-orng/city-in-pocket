@@ -3,6 +3,7 @@ from requests import get
 from random import choice
 from dotenv import load_dotenv
 from vkpymusic import Service
+from datetime import timezone, tzinfo
 
 
 load_dotenv()
@@ -26,17 +27,6 @@ def get_region_by_lat_long(lat, long):
     request = 'http://api.weatherapi.com/v1/current.json'
         
     return get(request, params=json).json()['location']['region']
-
-
-def get_tz_by_lat_long(lat, long):
-    json = {
-        'key': os.getenv('WEATHER_TOKEN'),
-        'q': f'{lat},{long}'
-    }
-
-    request = 'http://api.weatherapi.com/v1/current.json'
-
-    return get(request, params=json).json()['location']['tz_id']
 
 
 def get_weather_now(lat, long):
