@@ -1,0 +1,2 @@
+2025-05-15 01:33:59,998 | token_receiver.py(398) | token_receiver.save_to_config(...) | [WARNING] File already exist! It will be overwritten.
+2025-05-15 01:36:16,099 | token_receiver.py(243) | token_receiver.auth(...) | [ERROR] Login or password is invalid!
