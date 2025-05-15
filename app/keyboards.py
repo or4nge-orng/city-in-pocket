@@ -24,5 +24,6 @@ return_kb = InlineKeyboardMarkup(inline_keyboard=[
 admin_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text='Отправить песню дня', callback_data='send_song_of_a_day')],
     [InlineKeyboardButton(text='Прогноз погоды', callback_data='forecast')],
-    [InlineKeyboardButton(text='Запланировать сообщение', callback_data='schedule_message')],
+    [InlineKeyboardButton(text='Запланировать сообщения всем пользователям', callback_data='schedule_messages')],
+    [InlineKeyboardButton(text='Получить список scheduler', callback_data='get_scheduler_list')],
 ])

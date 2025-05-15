@@ -2,19 +2,20 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery, URLInputFile
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, time
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import app.keyboards as kb
 from app.states import Registration, ChangeCity
-from app.requests import *
+from app.request import *
 from app.funcs import *
 
 router = Router()
-scheduler = AsyncIOScheduler()
 load_dotenv()
+scheduler = AsyncIOScheduler()
+
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, msg_to_del: dict):
@@ -69,15 +70,13 @@ async def process_time(message: Message, state: FSMContext, msg_to_del: dict):
     data = await state.get_data()
     write_to_users(message.from_user.id, data)
     await message.answer('''Отлично! Теперь я буду каждый день в указанное время отправлять тебе прогноз погоды.''', reply_markup=kb.return_kb)
-    await scheduler.add_job(scheduled,
-                            'cron',
-                            day_of_week='mon-sun',
-                            hour=data['time'][0],
-                            minute=data['time'][1],
-                            kwargs={'bot': message.bot, 'chat_id': message.chat.id},
-                            id=f'{message.from_user.id}'+'_scheduled')
+    scheduler.add_job(scheduled, id=str(message.from_user.id),
+                      args=(message.bot, message.chat.id), trigger='cron',
+                      hour=data['time'].split(':')[0], minute=data['time'].split(':')[1],
+                      start_date=datetime.now(), end_date=None)
+    scheduler.start() if not scheduler.running else None
     await message.bot.delete_messages(chat_id=message.chat.id, message_ids=msg_to_del[message.chat.id] + [message.message_id])
-    msg_to_del[message.chat.id].clear()
+    msg_to_del[message.chat.id] = []
     await state.clear()
     
     
@@ -92,8 +91,7 @@ async def weather_now(call: CallbackQuery):
         
         
 async def scheduled(bot: Bot, chat_id: int):
-    print(True)
-    weather = get_weather_now(*get_user_lat_long(chat_id))
+    weather = get_weather_for_day(*get_user_lat_long(os.getenv('ADMIN_ID')))
     text = f'''Прогноз погоды на сегодня:
 
 Средняя температура: {weather['avgtemp_c']}
@@ -106,7 +104,10 @@ async def scheduled(bot: Bot, chat_id: int):
     if 'daily_chance_of_snow' in weather.keys():
         text += f'\nВероятность снегопада: {weather["daily_chance_of_snow"]}'
 
-    await bot.send_message(chat_id=os.getenv('ADMIN_ID'), text=text, reply_markup=kb.return_kb)
+    audio_raw = get_song_of_a_day()
+    audio = URLInputFile(audio_raw.url)
+    
+    await bot.send_audio(chat_id=chat_id, audio=audio, title=audio_raw.title, performer=audio_raw.artist, caption=text, reply_markup=kb.return_kb)
         
         
 # TODO Добавить в настройки смену имени и времени
@@ -170,8 +171,6 @@ async def change_time(call: CallbackQuery):
     
 @router.message(Command('admin'))
 async def admin_panel(message: Message):
-    print(message.from_user.id)
-    print(os.getenv('ADMIN_ID'))
     if message.from_user.id == int(os.getenv('ADMIN_ID')):
         await message.reply('''
 Добро пожаловать в админ панель!
@@ -214,12 +213,23 @@ async def test():
     print(True)
     
     
-@router.callback_query(F.data == 'schedule_message')
+@router.callback_query(F.data == 'schedule_messages')
 async def schedule_message(call: CallbackQuery):
-    #scheduler.add_job(scheduled, 'interval',
-    #                  next_run_time=datetime.now() + timedelta(seconds=3),
-    #                  args=(call.bot, os.getenv('ADMIN_ID')))
-    scheduler.add_job(test, 'interval', seconds=3, id='test', next_run_time=datetime.now() + timedelta(seconds=3))
+    for i in get_all_ids():
+        i = str(i)
+        if i not in [x.id for x in scheduler.get_jobs()]:
+            scheduler.add_job(scheduled, id=i,
+                              trigger='cron', args=[call.bot, i],
+                              hour=int(get_user_time(i).split(':')[0]),
+                              minute=int(get_user_time(i).split(':')[1]))
+    scheduler.start() if not scheduler.running else None
+    
+    
+@router.callback_query(F.data == 'get_scheduler_list')
+async def get_scheduler_list(call: CallbackQuery):
+    jobs = scheduler.get_jobs()
+    for i in jobs:
+        print(i.id, i.next_run_time)
     
     
 @router.message()

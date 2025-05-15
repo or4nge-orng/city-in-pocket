@@ -1,7 +1,7 @@
 from database.scritps.db_session import create_session
 from database.scritps.models.users import User
 from datetime import time
-from app.requests import *
+from app.request import *
 
 
 def check_user_in_db(user_id):
@@ -51,3 +51,12 @@ def update_user_loc(user_id, loc):
     user.long = float(loc.split(',')[1])
     session.commit()
     print(user.lat, user.long)
+    
+    
+def get_all_ids():
+    session = create_session()
+    users = session.query(User).all()
+    ids = []
+    for user in users:
+        ids.append(user.tg_id)
+    return ids
