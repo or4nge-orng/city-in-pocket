@@ -1,9 +1,12 @@
-from requests import get
+from requests import get, post
 from bs4 import BeautifulSoup
 from app.request import get_city_by_lat_long, get_region_by_lat_long
+from dotenv import load_dotenv
+from os import getenv
+
 
 class News():
-    def __init__(self, loc: tuple):
+    def __init__(self, loc):
         self.loc = loc
 
     def get_html(self):
@@ -17,12 +20,11 @@ class News():
         for article in articles:
             link = article.find('a', {'class': 'JtKRv'})
             yield link
-
-
-news = News((59.565155, 150.808586))
-res = []
-for i in news.get_news():
-    res.append({'title': i.get_text(), 'link': 'https://news.google.com' + i.get('href')[1:]})
-    if len(res) == 3:
-        break
-print(len(res))
+            
+    def get_res(self, n):
+        res = []
+        for i in self.get_news():
+            res.append({'title': i.get_text(), 'link': 'https://news.google.com' + i.get('href')[1:]})
+            if len(res) == n:
+                break
+        return res
