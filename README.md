@@ -36,3 +36,7 @@
 - vkpymusic (music)
 - sqlalchemy (orm)
 - beautifulsoup4 (news parsing)
+
+## Использованные API
+- wweatherapi
+- google news
