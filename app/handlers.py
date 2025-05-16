@@ -301,8 +301,10 @@ async def schedule_message(call: CallbackQuery, msg_to_del:dict):
 @router.callback_query(F.data == 'get_scheduler_list')
 async def get_scheduler_list(call: CallbackQuery):
     jobs = scheduler.get_jobs()
+    text = ''
     for i in jobs:
-        print(i.id, i.next_run_time)
+        text += f'{i.id}, {i.next_run_time}\n'
+    await call.message.edit_text(text=text, reply_markup=kb.admin_kb)
     
     
 @router.message()
