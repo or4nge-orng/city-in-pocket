@@ -7,8 +7,7 @@ start_location_kb = ReplyKeyboardMarkup(keyboard=[
 ], resize_keyboard=True, one_time_keyboard=True)
 
 main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text='Погода сейчас', callback_data='weather_now')],
-    [InlineKeyboardButton(text='Настройки', callback_data='settings')],
+    [InlineKeyboardButton(text='Настройки', callback_data='settings')]
 ])
 
 settings_kb = InlineKeyboardMarkup(inline_keyboard=[

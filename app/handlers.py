@@ -1,16 +1,19 @@
 from aiogram import Router, F, Bot
-from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery, URLInputFile
+from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery, URLInputFile, FSInputFile
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
+from aiogram.enums import ParseMode
 import os
 from dotenv import load_dotenv
-from datetime import datetime, time
+from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from re import match
 
 import app.keyboards as kb
-from app.states import Registration, ChangeCity
+from app.states import Registration, ChangeCity, ChangeTime
 from app.request import *
 from app.funcs import *
+from app.news import News
 
 router = Router()
 load_dotenv()
@@ -19,17 +22,29 @@ scheduler = AsyncIOScheduler()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, msg_to_del: dict):
-    
+    msg_to_del[message.chat.id] = []
     if check_user_in_db(message.from_user.id):
-        user = get_user_name(message.from_user.id)
-        await message.answer(f'''Добро пожаловать, {user}''', reply_markup=kb.main_inline_kb)
+        user_loc = get_user_lat_long(message.from_user.id)
+        text = f'''Добро пожаловать, {get_user_name(message.from_user.id)}
+                    
+{datetime.strftime(datetime.now(), "%d.%m.%Y")}
+                                 
+Ваш город: {get_city_by_lat_long(*user_loc)}, {get_region_by_lat_long(*user_loc)}
+Сейчас температура {get_weather_now(*user_loc)}
+
+Последние новости:\n'''
+        news = News(get_user_lat_long(message.from_user.id)).get_res(3)
+        for i in news:
+            text += f'''\n<a href="{i["link"]}">{i["title"]}</a>\n'''
+        print(text)
+        await message.answer(text=text, parse_mode=ParseMode.HTML, reply_markup=kb.main_inline_kb)
         await message.delete()
-        msg_to_del[message.chat.id].clear()
+        
     else:
-        msg_to_del[message.chat.id] = []
         await state.set_state(Registration.name)
-        msg = await message.answer(f'''Привет {message.from_user.username}!
-                            Как к тебе можно обращаться?''')
+        msg = await message.answer(f'''Привет, {message.from_user.username}!
+
+Как к тебе можно обращаться?''')
         msg_to_del[message.chat.id].append(msg.message_id)
         print(msg_to_del)
         await message.delete()
@@ -59,6 +74,7 @@ async def process_city(message: Message, state: FSMContext, msg_to_del: dict):
 Формат: (ЧАС:МИНУТЫ)''', reply_markup=ReplyKeyboardRemove())
     else:
         msg = await message.answer(text='''Что-то пошло не так, попробуй еще раз''', reply_markup=kb.start_location_kb)
+        await state.set_state(Registration.loc)
     msg_to_del[message.chat.id].append(msg.message_id)
     msg_to_del[message.chat.id].append(message.message_id)
     print(msg_to_del)
@@ -66,31 +82,30 @@ async def process_city(message: Message, state: FSMContext, msg_to_del: dict):
 
 @router.message(Registration.time)
 async def process_time(message: Message, state: FSMContext, msg_to_del: dict):
-    await state.update_data(time=message.text)
-    data = await state.get_data()
-    write_to_users(message.from_user.id, data)
-    await message.answer('''Отлично! Теперь я буду каждый день в указанное время отправлять тебе прогноз погоды.''', reply_markup=kb.return_kb)
-    scheduler.add_job(scheduled, id=str(message.from_user.id),
-                      args=(message.bot, message.chat.id), trigger='cron',
-                      hour=data['time'].split(':')[0], minute=data['time'].split(':')[1],
-                      start_date=datetime.now(), end_date=None)
-    scheduler.start() if not scheduler.running else None
-    await message.bot.delete_messages(chat_id=message.chat.id, message_ids=msg_to_del[message.chat.id] + [message.message_id])
-    msg_to_del[message.chat.id] = []
-    await state.clear()
-    
-    
-@router.callback_query(F.data == 'weather_now')
-async def weather_now(call: CallbackQuery):
-    user_loc = get_user_lat_long(call.from_user.id)
-    data = get_weather_now(user_loc[0], user_loc[1])
-    if not data:
-        await call.message.edit_text('Не удалось получить данные о погоде, проверь правильность города и повтори попытку', reply_markup=kb.return_kb)
+    if match(r'\d\d:\d\d', message.text) or match(r'\d:\d\d', message.text):
+        await state.update_data(time=message.text)
+        data = await state.get_data()
+        write_to_users(message.from_user.id, data)
+        await message.answer('''Отлично! Теперь я буду каждый день в указанное время отправлять тебе прогноз погоды.''', reply_markup=kb.return_kb)
+        scheduler.add_job(scheduled, id=str(message.from_user.id),
+                        args=(message.bot, message.chat.id, msg_to_del), trigger='cron',
+                        hour=int(data['time'].split(':')[0]), minute=int(data['time'].split(':')[1]),
+                        start_date=datetime.now(), end_date=None)
+        scheduler.start() if not scheduler.running else None
+        await message.bot.delete_messages(chat_id=message.chat.id, message_ids=msg_to_del[message.chat.id] + [message.message_id])
+        msg_to_del[message.chat.id] = []
+        await state.clear()
     else:
-        await call.message.edit_text(f'В городе {get_city_by_lat_long(*user_loc)} сейчас {data}', reply_markup=kb.return_kb)
+        msg = await message.answer('''Что-то пошло не так, попробуй еще раз
+Формат: (ЧАС:МИНУТЫ)''', reply_markup=ReplyKeyboardRemove())
+        await state.set_state(Registration.time)
+        msg_to_del[message.chat.id].append(msg.message_id)
+        msg_to_del[message.chat.id].append(message.message_id)
+    print(msg_to_del)
+
         
         
-async def scheduled(bot: Bot, chat_id: int):
+async def scheduled(bot: Bot, chat_id: int, msg_to_del: dict):
     weather = get_weather_for_day(*get_user_lat_long(os.getenv('ADMIN_ID')))
     text = f'''Прогноз погоды на сегодня:
 
@@ -104,26 +119,43 @@ async def scheduled(bot: Bot, chat_id: int):
     if 'daily_chance_of_snow' in weather.keys():
         text += f'\nВероятность снегопада: {weather["daily_chance_of_snow"]}'
 
+    user_loc = get_user_lat_long(chat_id)
+    news = News(user_loc).get_res(3)
+    text += '\nПоследние новости:\n'
+    for i in news:
+        text += f'''\n<a href="{i["link"]}">{i["title"]}</a>\n'''
+
     audio_raw = get_song_of_a_day()
     audio = URLInputFile(audio_raw.url)
     
-    await bot.send_audio(chat_id=chat_id, audio=audio, title=audio_raw.title, performer=audio_raw.artist, caption=text, reply_markup=kb.return_kb)
+    msg = await bot.send_audio(chat_id=chat_id, audio=audio, title=audio_raw.title, performer=audio_raw.artist)
+    await bot.send_message(chat_id=chat_id, text=text, reply_markup=kb.return_kb, parse_mode='HTML')
+    msg_to_del[chat_id].append(msg.message_id)
         
-        
-# TODO Добавить в настройки смену имени и времени
-# TODO Добавить кнопку для вывода прогноза на день (макс и мин температуры, облачность, ветер, осадки)
-# TODO Доделать рассылку (закончил на реквесте погоды)
 @router.callback_query(F.data == 'return')
 async def main_menu(call: CallbackQuery, msg_to_del: dict):
-    if msg_to_del[call.message.chat.id] and msg_to_del[call.message.chat.id] != [call.message.message_id]:
+    print(msg_to_del)
+    if call.message.chat.id in msg_to_del \
+        and msg_to_del[call.message.chat.id] \
+        and msg_to_del[call.message.chat.id] != [call.message.message_id]:
         await call.message.bot.delete_messages(chat_id=call.message.chat.id, message_ids=msg_to_del[call.message.chat.id])
-        msg_to_del[call.message.chat.id].clear()
+        msg_to_del[call.message.chat.id] = []
         
     user_loc = get_user_lat_long(call.from_user.id)
-    await call.message.edit_text(f'''Добро пожаловать, {get_user_name(call.from_user.id)}
+    text = f'''Добро пожаловать, {get_user_name(call.from_user.id)}
+                    
+{datetime.strftime(datetime.now(), "%d.%m.%Y")}
                                  
 Ваш город: {get_city_by_lat_long(*user_loc)}, {get_region_by_lat_long(*user_loc)}
-Сейчас температура {get_weather_now(*user_loc)}''', reply_markup=kb.main_inline_kb) 
+Сейчас температура {get_weather_now(*user_loc)}
+
+Последние новости:\n'''
+    news = News(user_loc).get_res(3)
+    for i in news:
+        text += f'''\n<a href="{i["link"]}">{i["title"]}</a>\n'''
+    print(text)
+    await call.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=kb.main_inline_kb)
+    msg_to_del[call.message.chat.id] = []
 
     
 @router.callback_query(F.data == 'settings')
@@ -131,10 +163,12 @@ async def settings(call: CallbackQuery, msg_to_del: dict):
     msg = await call.message.edit_text(f'''Настройки
 Ваш город: {get_city_by_lat_long(*get_user_lat_long(call.from_user.id))}, {get_region_by_lat_long(*get_user_lat_long(call.from_user.id))}
 Время ежедневной рассылки погоды: {get_user_time(call.from_user.id)}''', reply_markup=kb.settings_kb)
-    if call.message.chat.id in msg_to_del:
+    if call.message.chat.id in msg_to_del and msg.message_id not in msg_to_del[call.message.chat.id]:
         msg_to_del[call.message.chat.id].append(msg.message_id)
     else:
         msg_to_del[call.message.chat.id] = [msg.message_id]
+    
+    print(msg_to_del)
     
     
 @router.callback_query(F.data == 'change_place')
@@ -144,10 +178,11 @@ async def change_place(call: CallbackQuery, state: FSMContext, msg_to_del: dict)
     msg = await call.message.answer(f'''Чтобы поменять город, отправь мне твой город проживания. Повторно нажми на кнопку для отправки местоположения''', reply_markup=kb.start_location_kb)
     msg_to_del[call.message.chat.id].append(call.message.message_id)
     msg_to_del[call.message.chat.id].append(msg.message_id)
+    print(msg_to_del)
     
     
 @router.message(ChangeCity.loc)
-async def change_city(message: Message, state: FSMContext, msg_to_del: dict):
+async def finish_change_place(message: Message, state: FSMContext, msg_to_del: dict):
     if message.content_type == 'location':
         loc = f'{message.location.latitude},{message.location.longitude}'
         await state.update_data(loc=loc)
@@ -159,15 +194,53 @@ async def change_city(message: Message, state: FSMContext, msg_to_del: dict):
     else:
         await message.delete()
         msg = await message.answer('''Что-то пошло не так, попробуй еще раз''', reply_markup=kb.start_location_kb)
+        await state.set_state(ChangeCity.loc)
         msg_to_del[message.chat.id].append(message.message_id)
         msg_to_del[message.chat.id].append(msg.message_id)
+    print(msg_to_del)
     
     
 @router.callback_query(F.data == 'change_time')
-async def change_time(call: CallbackQuery):
-    await call.message.edit_text('''Отправь время, когда ты хочешь получать ежедневный прогноз погоды
-Формат: (ЧАС:МИНУТЫ)''', reply_markup=ReplyKeyboardRemove())
-
+async def change_time(call: CallbackQuery, state: FSMContext, msg_to_del: dict):
+    await state.set_state(ChangeTime.time)
+    msg = await call.message.edit_text('''Отправь время, когда ты хочешь получать ежедневный прогноз погоды
+Формат: (ЧАС:МИНУТЫ)''', reply_markup=None)
+    if call.message.chat.id in msg_to_del:
+        msg_to_del[call.message.chat.id].append(msg.message_id)
+    else:
+        msg_to_del[call.message.chat.id] = [msg.message_id]
+    print(msg_to_del)
+        
+        
+@router.message(ChangeTime.time)
+async def finish_change_time(message: Message, state: FSMContext, msg_to_del: dict):
+    if match(r'\d\d:\d\d', message.text) or match(r'\d:\d\d', message.text):
+        await state.update_data(time=message.text)
+        data = await state.get_data()
+        update_user_time(message.from_user.id, data['time'])
+        await message.answer('''Время успешно изменено! Теперь ты будешь получать прогноз погоды в указанное время''', reply_markup=kb.return_kb)
+        if str(message.from_user.id) in [x.id for x in scheduler.get_jobs()]:
+            scheduler.remove_job(str(message.from_user.id))
+            scheduler.add_job(scheduled, id=str(message.from_user.id),
+                          args=(message.bot, message.chat.id, msg_to_del), trigger='cron',
+                          hour=int(data['time'].split(':')[0]), minute=int(data['time'].split(':')[1]),
+                          start_date=datetime.now(), end_date=None)
+        else:
+            scheduler.add_job(scheduled, id=str(message.from_user.id),
+                          args=(message.bot, message.chat.id, msg_to_del), trigger='cron',
+                          hour=int(data['time'].split(':')[0]), minute=data['time'].split(':')[1],
+                          start_date=datetime.now(), end_date=None)
+        scheduler.start() if not scheduler.running else None   
+        msg_to_del[message.chat.id].append(message.message_id)  
+        await state.clear()       
+    else:
+        await message.delete()
+        msg = await message.answer('''Что-то пошло не так, попробуй еще раз''')
+        await state.set_state(ChangeTime.time)
+        msg_to_del[message.chat.id].append(message.message_id)
+        msg_to_del[message.chat.id].append(msg.message_id)
+    print(msg_to_del)
+        
     
 @router.message(Command('admin'))
 async def admin_panel(message: Message):
@@ -214,12 +287,12 @@ async def test():
     
     
 @router.callback_query(F.data == 'schedule_messages')
-async def schedule_message(call: CallbackQuery):
+async def schedule_message(call: CallbackQuery, msg_to_del:dict):
     for i in get_all_ids():
         i = str(i)
         if i not in [x.id for x in scheduler.get_jobs()]:
             scheduler.add_job(scheduled, id=i,
-                              trigger='cron', args=[call.bot, i],
+                              trigger='cron', args=[call.bot, i, msg_to_del],
                               hour=int(get_user_time(i).split(':')[0]),
                               minute=int(get_user_time(i).split(':')[1]))
     scheduler.start() if not scheduler.running else None
@@ -228,10 +301,20 @@ async def schedule_message(call: CallbackQuery):
 @router.callback_query(F.data == 'get_scheduler_list')
 async def get_scheduler_list(call: CallbackQuery):
     jobs = scheduler.get_jobs()
+    text = ''
     for i in jobs:
-        print(i.id, i.next_run_time)
+        text += f'{i.id}, {i.next_run_time}\n'
+    await call.message.edit_text(text=text, reply_markup=kb.admin_kb)
     
     
 @router.message()
-async def no_message(message: Message):
-    await message.reply(f'''Я пока не знаю это сообщение(''')
+async def no_message(message: Message, msg_to_del: dict):
+    photo = FSInputFile(path='data/images/404.jpg')
+    msg = await message.reply_photo(photo=photo)
+    await message.answer(text='Я пока не знаю это сообщение(', reply_markup=kb.return_kb)
+    if message.chat.id in msg_to_del:
+        msg_to_del[message.chat.id].append(message.message_id)
+        msg_to_del[message.chat.id].append(msg.message_id)
+    else:
+        msg_to_del[message.chat.id] = [message.message_id]
+        msg_to_del[message.chat.id].append(msg.message_id)

@@ -1,6 +1,6 @@
 from database.scritps.db_session import create_session
 from database.scritps.models.users import User
-from datetime import time
+from datetime import time, datetime, timezone
 from app.request import *
 
 
@@ -19,8 +19,7 @@ def write_to_users(user_id, data):
                 name=data['name'],
                 lat=float(data['loc'].split(',')[0]),
                 long=float(data['loc'].split(',')[1]),
-                time=time(int(data['time'].split(':')[0]), int(data['time'].split(':')[1])),
-                tz=get_tz_by_lat_long(float(data['loc'].split(',')[0]), float(data['loc'].split(',')[1])))
+                time=time(int(data['time'].split(':')[0]), int(data['time'].split(':')[1])))
     session.add(user)
     session.commit()
         
@@ -51,6 +50,13 @@ def update_user_loc(user_id, loc):
     user.long = float(loc.split(',')[1])
     session.commit()
     print(user.lat, user.long)
+    
+    
+def update_user_time(user_id, time_raw: str):
+    session = create_session()
+    user = session.query(User).filter(User.tg_id == user_id).first()
+    user.time = time(int(time_raw.split(':')[0]), int(time_raw.split(':')[1]))
+    session.commit()
     
     
 def get_all_ids():

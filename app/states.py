@@ -9,3 +9,7 @@ class Registration(StatesGroup):
     
 class ChangeCity(StatesGroup):
     loc = State()
+    
+    
+class ChangeTime(StatesGroup):
+    time = State()
